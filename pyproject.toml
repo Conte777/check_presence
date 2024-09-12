@@ -1,0 +1,16 @@
+[tool.poetry]
+name = "check-presence"
+version = "0.1.0"
+description = "Telegram bot for checking presence on pairs"
+authors = ["Conte <alexey.kolesnikov77@gmail.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.12"
+aiogram = "^3.13.0"
+pydantic-settings = "^2.5.2"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
