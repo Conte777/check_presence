@@ -57,17 +57,12 @@ cursor.execute(
 CREATE TABLE IF NOT EXISTS poll_answers (
     user_id INTEGER,
     user_name TEXT,
-    option_id INTEGER
+    option_id INTEGER,
+    poll_id INTEGER
 )
 """
 )
 conn.commit()
-
-
-def clear_poll_answers():
-    """Функция для очистки таблицы голосов"""
-    cursor.execute("DELETE FROM poll_answers")
-    conn.commit()
 
 
 @router.message(Command("start"))
@@ -77,8 +72,6 @@ async def cmd_start(message: types.Message):
 
 @router.message(Command("presence"))
 async def cmd_presence(message: types.Message, bot: Bot):
-    clear_poll_answers()
-
     await message.answer("Опрос запущен")
     result = await bot.send_poll(
         "-1002434066039_5",  # todo: Заменить на константу
@@ -92,14 +85,19 @@ async def cmd_presence(message: types.Message, bot: Bot):
 
     # Запускаем таймер на 20 минут для отправки результатов
     await send_poll_results_after_delay(
-        bot, "-1002434066039_5", 5
+        bot=bot, chat_id="-1002434066039_5", delay=10, poll_id=result.poll.id
     )  # 20 минут = 1200 секунд
 
 
-async def send_poll_results_after_delay(bot: Bot, chat_id: int, delay: int):
+async def send_poll_results_after_delay(
+    bot: Bot, chat_id: int, delay: int, poll_id: int
+):
     """Функция для отправки результатов спустя 10 минут"""
     await asyncio.sleep(delay)  # Ожидаем заданное количество секунд (10 минут)
-    cursor.execute("SELECT user_id, user_name, option_id FROM poll_answers")
+    cursor.execute(
+        "SELECT user_id, user_name, option_id FROM poll_answers WHERE poll_id = ? ORDER BY option_id DESC",
+        (poll_id,),
+    )
     results = cursor.fetchall()
 
     if results:
@@ -114,12 +112,18 @@ async def send_poll_results_after_delay(bot: Bot, chat_id: int, delay: int):
     else:
         await bot.send_message(chat_id, "Еще никто не проголосовал.")
 
+    cursor.execute(
+        "DELETE FROM poll_answers WHERE poll_id = ?",
+        (poll_id,),
+    )
+    conn.commit()
+
 
 @router.poll_answer()
 async def poll_answer(poll_answer: types.PollAnswer):
     """Обработчик события отправки голосов"""
-    if actual_poll_id != poll_answer.poll_id:
-        return
+    # if actual_poll_id != poll_answer.poll_id:
+    #     return
     if (
         poll_answer.user.id not in NAMES.keys()
         and poll_answer.user.username not in NAMES.keys()
@@ -129,12 +133,13 @@ async def poll_answer(poll_answer: types.PollAnswer):
     user_id = poll_answer.user.id
     user_name = poll_answer.user.full_name
     selected_options = poll_answer.option_ids  # Список индексов выбранных вариантов
+    poll_id = poll_answer.poll_id
 
     # Сохраняем данные в базу
     for option_id in selected_options:
         cursor.execute(
-            "INSERT INTO poll_answers (user_id, user_name, option_id) VALUES (?, ?, ?)",
-            (user_id, user_name, option_id),
+            "INSERT INTO poll_answers (user_id, user_name, option_id, poll_id) VALUES (?, ?, ?, ?)",
+            (user_id, user_name, option_id, poll_id),
         )
         conn.commit()
 
