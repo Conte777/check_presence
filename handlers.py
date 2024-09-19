@@ -40,8 +40,9 @@ NAMES = {
     1002963862: "Штриков Дмитрий",
 }
 ANSWER_OPTIONS = ["На паре", "Опаздываю", "Отсутствую"]
-TARGET_CHAT = "-1002183941184_2140"
-AWAIT_ANSWER_TIME = 30  # в пределах от 1 до 600 секунд
+TARGET_CHAT = -1002183941184
+THREAD_ID = 2140
+AWAIT_ANSWER_TIME = 600  # в пределах от 1 до 600 секунд
 ADMINS = [760709790, 378790166]
 
 
@@ -81,11 +82,12 @@ async def cmd_start(message: types.Message):
 async def cmd_presence(message: types.Message, bot: Bot):
     await message.answer("Опрос запущен")
     result = await bot.send_poll(
-        "-1002434066039_5",  # todo: Заменить на константу
-        question="Присутствие на паре (Тест, потыкайте все варианты)",
+        TARGET_CHAT,  # todo: Заменить на константу
+        question="Присутствие на паре",
         options=ANSWER_OPTIONS,
         is_anonymous=False,
         open_period=AWAIT_ANSWER_TIME,  # todo: Надо сделать больше времени
+        message_thread_id=THREAD_ID,
     )
 
     # Запускаем таймер на 20 минут для отправки результатов
@@ -110,7 +112,7 @@ async def send_poll_results_after_delay(
 
         for user_id, user_fullname, option_id in results:
             result_message += (
-                f"{user_fullname} ({user_id}) выбрал(а) {ANSWER_OPTIONS[option_id]}\n"
+                f"{user_fullname} {ANSWER_OPTIONS[option_id]}\n"
             )
         for chat in chats_id:
             await bot.send_message(chat, result_message)
