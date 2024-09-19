@@ -5,8 +5,8 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
 
-# from aiogram.fsm.storage.redis import RedisStorage
 from config import secret_enum
+from handlers import close_connection
 
 
 async def set_my_commands(bot: Bot) -> None:
@@ -35,7 +35,7 @@ async def on_startup(bot: Bot) -> None:
 
 async def on_shutdown(bot: Bot) -> None:
     """Что нужно сделать при выключении бота"""
-    pass
+    await close_connection()
 
 
 async def bot_initialization(routers: Optional[List[Router]] = None) -> None:

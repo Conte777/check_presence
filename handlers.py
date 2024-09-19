@@ -1,12 +1,9 @@
 import asyncio
 import sqlite3
+from typing import List
 
 from aiogram import Bot, F, Router, types
 from aiogram.filters.command import Command
-
-router = Router()
-router.message.filter(F.from_user.id.in_([760709790, 378790166]))
-routers = [router]
 
 NAMES = {
     2061148502: "Барбаччи Анастасия",
@@ -26,7 +23,7 @@ NAMES = {
     "nhyseq": "Королёв Олег",  # мб вообще нет сообщений
     2117990099: "Кузнецов Александр",
     1493231220: "Курохтин Михаил",
-    "Skrea1m": "Лихачёв Алексей",  # закрыт
+    958255880: "Лихачёв Алексей",
     5216880345: "Лучшев Вадим",
     1028517848: "Лясин Иван",
     "Prapor02": "Магомедов Пайзула",  # закрыт
@@ -44,8 +41,13 @@ NAMES = {
 }
 ANSWER_OPTIONS = ["На паре", "Опаздываю", "Отсутствую"]
 TARGET_CHAT = "-1002183941184_2140"
+AWAIT_ANSWER_TIME = 30  # в пределах от 1 до 600 секунд
+ADMINS = [760709790, 378790166]
 
-actual_poll_id = -1
+
+router = Router()
+router.message.filter(F.from_user.id.in_(ADMINS))
+routers = [router]
 
 # Подключаемся к базе данных (или создаем её, если она не существует)
 conn = sqlite3.connect("polls.db")
@@ -56,13 +58,18 @@ cursor.execute(
     """
 CREATE TABLE IF NOT EXISTS poll_answers (
     user_id INTEGER,
-    user_name TEXT,
+    user_fullname TEXT,
     option_id INTEGER,
     poll_id INTEGER
 )
 """
 )
 conn.commit()
+
+
+async def close_connection():
+    """Закрываем соединение с базой данных"""
+    conn.close()
 
 
 @router.message(Command("start"))
@@ -75,27 +82,25 @@ async def cmd_presence(message: types.Message, bot: Bot):
     await message.answer("Опрос запущен")
     result = await bot.send_poll(
         "-1002434066039_5",  # todo: Заменить на константу
-        question="Присутствие на паре",
+        question="Присутствие на паре (Тест, потыкайте все варианты)",
         options=ANSWER_OPTIONS,
         is_anonymous=False,
-        open_period=5,  # todo: Надо сделать больше времени
+        open_period=AWAIT_ANSWER_TIME,  # todo: Надо сделать больше времени
     )
-    global actual_poll_id
-    actual_poll_id = result.poll.id
 
     # Запускаем таймер на 20 минут для отправки результатов
     await send_poll_results_after_delay(
-        bot=bot, chat_id="-1002434066039_5", delay=10, poll_id=result.poll.id
+        bot=bot, chat_id=ADMINS, delay=AWAIT_ANSWER_TIME + 1, poll_id=result.poll.id
     )  # 20 минут = 1200 секунд
 
 
 async def send_poll_results_after_delay(
-    bot: Bot, chat_id: int, delay: int, poll_id: int
+    bot: Bot, chats_id: List[int], delay: int, poll_id: int
 ):
     """Функция для отправки результатов спустя 10 минут"""
     await asyncio.sleep(delay)  # Ожидаем заданное количество секунд (10 минут)
     cursor.execute(
-        "SELECT user_id, user_name, option_id FROM poll_answers WHERE poll_id = ? ORDER BY option_id DESC",
+        "SELECT user_id, user_fullname, option_id FROM poll_answers WHERE poll_id = ? ORDER BY option_id DESC",
         (poll_id,),
     )
     results = cursor.fetchall()
@@ -103,27 +108,26 @@ async def send_poll_results_after_delay(
     if results:
         result_message = "Результаты голосования:\n\n"
 
-        for user_id, user_name, option_id in results:
+        for user_id, user_fullname, option_id in results:
             result_message += (
-                f"{user_name} ({user_id}) выбрал(а) {ANSWER_OPTIONS[option_id]}\n"
+                f"{user_fullname} ({user_id}) выбрал(а) {ANSWER_OPTIONS[option_id]}\n"
             )
+        for chat in chats_id:
+            await bot.send_message(chat, result_message)
 
-        await bot.send_message(chat_id, result_message)
+        cursor.execute(
+            "DELETE FROM poll_answers WHERE poll_id = ?",
+            (poll_id,),
+        )
+        conn.commit()
     else:
-        await bot.send_message(chat_id, "Еще никто не проголосовал.")
-
-    cursor.execute(
-        "DELETE FROM poll_answers WHERE poll_id = ?",
-        (poll_id,),
-    )
-    conn.commit()
+        for chat in chats_id:
+            await bot.send_message(chat, "Еще никто не проголосовал.")
 
 
 @router.poll_answer()
 async def poll_answer(poll_answer: types.PollAnswer):
     """Обработчик события отправки голосов"""
-    # if actual_poll_id != poll_answer.poll_id:
-    #     return
     if (
         poll_answer.user.id not in NAMES.keys()
         and poll_answer.user.username not in NAMES.keys()
@@ -131,18 +135,34 @@ async def poll_answer(poll_answer: types.PollAnswer):
         return
 
     user_id = poll_answer.user.id
-    user_name = poll_answer.user.full_name
-    selected_options = poll_answer.option_ids  # Список индексов выбранных вариантов
+    username = poll_answer.user.username
+    user_fullname = NAMES.get(user_id, NAMES.get(username, "not_found_username"))
+    selected_options = poll_answer.option_ids
     poll_id = poll_answer.poll_id
 
-    # Сохраняем данные в базу
-    for option_id in selected_options:
+    # Сохраняем ответ в базу
+    for option in selected_options:
         cursor.execute(
-            "INSERT INTO poll_answers (user_id, user_name, option_id, poll_id) VALUES (?, ?, ?, ?)",
-            (user_id, user_name, option_id, poll_id),
+            """SELECT * 
+            FROM poll_answers
+            WHERE poll_id = ? AND user_id = ?""",
+            (poll_id, user_id),
         )
+        result = cursor.fetchall()
+        if result:
+            cursor.execute(
+                """UPDATE poll_answers 
+                SET option_id = ? 
+                WHERE poll_id = ? AND user_id = ? AND option_id != ?""",
+                (option, poll_id, user_id, option),
+            )
+        else:
+            cursor.execute(
+                "INSERT INTO poll_answers (user_id, user_fullname, option_id, poll_id) VALUES (?, ?, ?, ?)",
+                (user_id, user_fullname, option, poll_id),
+            )
         conn.commit()
 
         print(
-            f"Пользователь {user_name} ({user_id}) проголосовал. Выбранная опция: {ANSWER_OPTIONS[int(option_id)]}"
+            f"Пользователь {user_fullname} ({user_id}) проголосовал. Выбранная опция: {ANSWER_OPTIONS[int(option)]}"
         )
