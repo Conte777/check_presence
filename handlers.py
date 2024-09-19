@@ -1,6 +1,5 @@
 import asyncio
 import sqlite3
-from typing import List
 
 from aiogram import Bot, F, Router, types
 from aiogram.filters.command import Command
@@ -40,6 +39,7 @@ NAMES = {
     1002963862: "Штриков Дмитрий",
 }
 ANSWER_OPTIONS = ["На паре", "Опаздываю", "Отсутствую"]
+ANSWER_OPTIONS_FOR_PRINT = ["на паре", "опаздывает", "отсутствует"]
 TARGET_CHAT = -1002183941184
 THREAD_ID = 2140
 AWAIT_ANSWER_TIME = 600  # в пределах от 1 до 600 секунд
@@ -92,17 +92,15 @@ async def cmd_presence(message: types.Message, bot: Bot):
 
     # Запускаем таймер на 20 минут для отправки результатов
     await send_poll_results_after_delay(
-        bot=bot, chat_id=ADMINS, delay=AWAIT_ANSWER_TIME + 1, poll_id=result.poll.id
+        bot=bot, delay=AWAIT_ANSWER_TIME + 1, poll_id=result.poll.id
     )  # 20 минут = 1200 секунд
 
 
-async def send_poll_results_after_delay(
-    bot: Bot, chats_id: List[int], delay: int, poll_id: int
-):
+async def send_poll_results_after_delay(bot: Bot, delay: int, poll_id: int):
     """Функция для отправки результатов спустя 10 минут"""
     await asyncio.sleep(delay)  # Ожидаем заданное количество секунд (10 минут)
     cursor.execute(
-        "SELECT user_id, user_fullname, option_id FROM poll_answers WHERE poll_id = ? ORDER BY option_id DESC",
+        "SELECT user_fullname, option_id FROM poll_answers WHERE poll_id = ? ORDER BY option_id DESC",
         (poll_id,),
     )
     results = cursor.fetchall()
@@ -110,12 +108,10 @@ async def send_poll_results_after_delay(
     if results:
         result_message = "Результаты голосования:\n\n"
 
-        for user_id, user_fullname, option_id in results:
-            result_message += (
-                f"{user_fullname} {ANSWER_OPTIONS[option_id]}\n"
-            )
-        for chat in chats_id:
-            await bot.send_message(chat, result_message)
+        for user_fullname, option_id in results:
+            result_message += f"{user_fullname} {ANSWER_OPTIONS_FOR_PRINT[option_id]}\n"
+
+        await bot.send_message(TARGET_CHAT, result_message, message_thread_id=THREAD_ID)
 
         cursor.execute(
             "DELETE FROM poll_answers WHERE poll_id = ?",
@@ -123,8 +119,9 @@ async def send_poll_results_after_delay(
         )
         conn.commit()
     else:
-        for chat in chats_id:
-            await bot.send_message(chat, "Еще никто не проголосовал.")
+        await bot.send_message(
+            TARGET_CHAT, "Еще никто не проголосовал.", message_thread_id=THREAD_ID
+        )
 
 
 @router.poll_answer()
@@ -165,6 +162,4 @@ async def poll_answer(poll_answer: types.PollAnswer):
             )
         conn.commit()
 
-        print(
-            f"Пользователь {user_fullname} ({user_id}) проголосовал. Выбранная опция: {ANSWER_OPTIONS[int(option)]}"
-        )
+        print(f"{user_fullname} ({user_id}) {ANSWER_OPTIONS_FOR_PRINT[int(option)]}")
