@@ -82,46 +82,62 @@ async def cmd_start(message: types.Message):
 async def cmd_presence(message: types.Message, bot: Bot):
     await message.answer("Опрос запущен")
     result = await bot.send_poll(
-        TARGET_CHAT,  # todo: Заменить на константу
+        TARGET_CHAT,
         question="Присутствие на паре",
         options=ANSWER_OPTIONS,
         is_anonymous=False,
-        open_period=AWAIT_ANSWER_TIME,  # todo: Надо сделать больше времени
+        open_period=AWAIT_ANSWER_TIME,
         message_thread_id=THREAD_ID,
     )
 
-    # Запускаем таймер на 20 минут для отправки результатов
+    # Запускаем таймер
     await send_poll_results_after_delay(
         bot=bot, delay=AWAIT_ANSWER_TIME + 1, poll_id=result.poll.id
-    )  # 20 минут = 1200 секунд
+    )
 
 
 async def send_poll_results_after_delay(bot: Bot, delay: int, poll_id: int):
-    """Функция для отправки результатов спустя 10 минут"""
-    await asyncio.sleep(delay)  # Ожидаем заданное количество секунд (10 минут)
+    """Функция для отправки результатов спустя время"""
+    await asyncio.sleep(delay)  # Ожидаем заданное количество секунд
+
+    result_message = "Результаты голосования:\n\n"  # Итоговое сообщение
+    voted_users = []  # Сюда будут пихаться имена тех, кто проголосовал
+    for i in range(len(ANSWER_OPTIONS)):
+        # Для каждого варианта отдельная группа
+        cursor.execute(
+            """SELECT user_fullname
+            FROM poll_answers 
+            WHERE poll_id = ? AND option_id = ?
+            ORDER BY user_fullname ASC""",
+            (poll_id, i),
+        )
+        results = cursor.fetchall()
+
+        result_message += (
+            f"Количество человек {ANSWER_OPTIONS_FOR_PRINT[i]}: {len(results)}\n"
+        )
+        if results:
+            for user_fullname in results:
+                result_message += f"{user_fullname[0]}\n"
+                voted_users.append(user_fullname)
+        result_message += "\n"
+
+    # Добавляем раздел с непроголосовавшими
+    not_voted_users = list(set(NAMES.values()) - set(voted_users))
+    if not_voted_users:
+        not_voted_users.sort()
+        result_message += "Непроголосовавшие люди:\n"
+        for user in not_voted_users:
+            result_message += user + "\n"
+
+    # Отправляем итоговое сообщение
+    await bot.send_message(TARGET_CHAT, result_message, message_thread_id=THREAD_ID)
+    # Чистим базу данных от уже устаревшего опроса
     cursor.execute(
-        "SELECT user_fullname, option_id FROM poll_answers WHERE poll_id = ? ORDER BY option_id DESC",
+        "DELETE FROM poll_answers WHERE poll_id = ?",
         (poll_id,),
     )
-    results = cursor.fetchall()
-
-    if results:
-        result_message = "Результаты голосования:\n\n"
-
-        for user_fullname, option_id in results:
-            result_message += f"{user_fullname} {ANSWER_OPTIONS_FOR_PRINT[option_id]}\n"
-
-        await bot.send_message(TARGET_CHAT, result_message, message_thread_id=THREAD_ID)
-
-        cursor.execute(
-            "DELETE FROM poll_answers WHERE poll_id = ?",
-            (poll_id,),
-        )
-        conn.commit()
-    else:
-        await bot.send_message(
-            TARGET_CHAT, "Еще никто не проголосовал.", message_thread_id=THREAD_ID
-        )
+    conn.commit()
 
 
 @router.poll_answer()
@@ -135,7 +151,7 @@ async def poll_answer(poll_answer: types.PollAnswer):
 
     user_id = poll_answer.user.id
     username = poll_answer.user.username
-    user_fullname = NAMES.get(user_id, NAMES.get(username, "not_found_username"))
+    user_fullname = NAMES.get(user_id, NAMES.get(username, "not_found_userfullname"))
     selected_options = poll_answer.option_ids
     poll_id = poll_answer.poll_id
 
@@ -157,7 +173,8 @@ async def poll_answer(poll_answer: types.PollAnswer):
             )
         else:
             cursor.execute(
-                "INSERT INTO poll_answers (user_id, user_fullname, option_id, poll_id) VALUES (?, ?, ?, ?)",
+                """INSERT INTO poll_answers (user_id, user_fullname, option_id, poll_id) 
+                VALUES (?, ?, ?, ?)""",
                 (user_id, user_fullname, option, poll_id),
             )
         conn.commit()
