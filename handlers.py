@@ -4,50 +4,18 @@ import sqlite3
 from aiogram import Bot, F, Router, types
 from aiogram.filters.command import Command
 
-NAMES = {
-    2061148502: "Барбаччи Анастасия",
-    "SOSchlenoSOS": "Батин Платон",  # закрыт
-    1515192079: "Борисов Александр",
-    855323286: "Быков Денис",
-    "MaxMerzyl": "Голубенко Максим",  # закрыт
-    5278809823: "Горбунова Ксения",
-    1000131290: "Дерибин Матвей",
-    1057129270: "Дзикевич Максим",
-    592699018: "Ермохин Андрей",
-    810636482: "Занин Никита",
-    1033407535: "Иванов Никита",
-    874865029: "Казанцев Арсений",
-    748197936: "Канев Александр",
-    378790166: "Колесников Алексей",
-    "nhyseq": "Королёв Олег",  # мб вообще нет сообщений
-    2117990099: "Кузнецов Александр",
-    1493231220: "Курохтин Михаил",
-    958255880: "Лихачёв Алексей",
-    5216880345: "Лучшев Вадим",
-    1028517848: "Лясин Иван",
-    "Prapor02": "Магомедов Пайзула",  # закрыт
-    754601226: "Макаров Вячеслав",
-    760709790: "Олейник Данил",
-    430354302: "Пшеничнов Святослав",
-    861064904: "Ребриков Артём",
-    691608678: "Рыбаченок Вадим",
-    7148607418: "Сафронов Денис",
-    "VovseNeTorch": "Селиверстов Дмитрий",  # нет сообщений мб
-    5461434577: "Сон Владимир",
-    1365932181: "Трубников Ярослав",
-    6443296662: "Ушакова Ника",
-    1002963862: "Штриков Дмитрий",
-}
-ANSWER_OPTIONS = ["На паре", "Опаздываю", "Отсутствую"]
-ANSWER_OPTIONS_FOR_PRINT = ["на паре", "опаздывает", "отсутствует"]
-TARGET_CHAT = -1002183941184
-THREAD_ID = 2140
-AWAIT_ANSWER_TIME = 600  # в пределах от 1 до 600 секунд
-ADMINS = [760709790, 378790166]
-
+from config import (
+    ADMINS_IDS,
+    ANSWER_OPTIONS,
+    ANSWER_OPTIONS_FOR_PRINT,
+    AWAIT_ANSWER_TIME,
+    STUDENTS_NAMES,
+    TARGET_CHAT,
+    THREAD_ID,
+)
 
 router = Router()
-router.message.filter(F.from_user.id.in_(ADMINS))
+router.message.filter(F.from_user.id.in_(ADMINS_IDS))
 routers = [router]
 
 # Подключаемся к базе данных (или создаем её, если она не существует)
@@ -119,14 +87,14 @@ async def send_poll_results_after_delay(bot: Bot, delay: int, poll_id: int):
         if results:
             for user_fullname in results:
                 result_message += f"{user_fullname[0]}\n"
-                voted_users.append(user_fullname)
+                voted_users.append(user_fullname[0])
         result_message += "\n"
 
     # Добавляем раздел с непроголосовавшими
-    not_voted_users = list(set(NAMES.values()) - set(voted_users))
+    not_voted_users = list(set(STUDENTS_NAMES.values()) - set(voted_users))
     if not_voted_users:
         not_voted_users.sort()
-        result_message += "Непроголосовавшие люди:\n"
+        result_message += f"Непроголосовавшие люди: {len(not_voted_users)}\n"
         for user in not_voted_users:
             result_message += user + "\n"
 
@@ -144,14 +112,16 @@ async def send_poll_results_after_delay(bot: Bot, delay: int, poll_id: int):
 async def poll_answer(poll_answer: types.PollAnswer):
     """Обработчик события отправки голосов"""
     if (
-        poll_answer.user.id not in NAMES.keys()
-        and poll_answer.user.username not in NAMES.keys()
+        poll_answer.user.id not in STUDENTS_NAMES.keys()
+        and poll_answer.user.username not in STUDENTS_NAMES.keys()
     ):
         return
 
     user_id = poll_answer.user.id
     username = poll_answer.user.username
-    user_fullname = NAMES.get(user_id, NAMES.get(username, "not_found_userfullname"))
+    user_fullname = STUDENTS_NAMES.get(
+        user_id, STUDENTS_NAMES.get(username, "not_found_userfullname")
+    )
     selected_options = poll_answer.option_ids
     poll_id = poll_answer.poll_id
 
